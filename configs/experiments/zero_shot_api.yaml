@@ -1,0 +1,18 @@
+experiment_name: zero_shot_api
+
+model:
+  name: qwen/qwen3.8-27b
+  reasoning_effort: none
+  reasoning_format: hidden
+
+generation:
+  max_tokens: 128
+  temperature: 0.0
+  sleep_between: 0.5
+  max_retries: 3
+
+prompt: |
+  Ответь на вопрос кратко, одним предложением. Не объясняй ход рассуждения.
+  Если точного ответа нет, напиши: не знаю.
+
+  Вопрос: {question}

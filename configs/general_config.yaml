@@ -1,0 +1,10 @@
+project_name: rag
+
+paths:
+  raw_dir: data/raw
+  articles: data/raw/articles.json
+  questions: data/raw/questions.json
+  ground_truth: data/raw/ground_truth.json
+  artifacts_dir: artifacts
+
+seed: 42
