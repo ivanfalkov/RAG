@@ -9,7 +9,7 @@ from pathlib import Path
 from dotenv import load_dotenv
 
 from src.data.qa import load_qa_from_config
-from src.experiments.zero_shot import run_zero_shot
+from src.experiments.runner import predict_evaluate_save_artifacts
 from src.models.vllm_generator import VllmGenerator
 from src.utils.config import load_config
 from src.utils.logging_utils import setup_logging
@@ -35,7 +35,7 @@ def main() -> None:
     config = {**load_config(args.config), **load_config(args.experiment_config)}
     examples = load_qa_from_config(config)
     generator = VllmGenerator(config)
-    run_dir = run_zero_shot(config, examples, generator.predict)
+    run_dir = predict_evaluate_save_artifacts(config, examples, generator.predict)
     logging.getLogger(__name__).info("artifacts: %s", run_dir)
 
 

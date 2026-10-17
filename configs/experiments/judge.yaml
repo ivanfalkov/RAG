@@ -1,0 +1,24 @@
+experiment_name: judge
+
+judge:
+  model: openai/gpt-oss-120b
+  max_retries: 5
+  sleep_between: 4.0
+  temperature: 0.0
+  max_tokens: 2048
+  reasoning_effort: low
+  question_preview_chars: 200
+  score_min: 1
+  score_max: 5
+  metrics:
+    correctness: do the facts in the candidate match the reference answer? (1 = wrong, contradictory, or "I don't know" when the reference has an answer, 5 = the same facts)
+    completeness: does the candidate include the key facts from the reference? (1 = misses the answer, 5 = covers it)
+    conciseness: is the candidate brief without dropping the answer? (1 = empty, evasive, or padded, 5 = a short complete answer)
+
+data:
+  limit: 50
+
+prediction_files:
+  zero_shot_local: artifacts/zero_shot_local/20261016-135558/predictions.jsonl
+  zero_shot_api: artifacts/zero_shot_api/20261016-140429/predictions.jsonl
+  rag_local: artifacts/rag_local/20261017-134211/predictions.jsonl

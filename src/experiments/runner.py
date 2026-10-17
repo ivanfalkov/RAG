@@ -1,4 +1,4 @@
-"""Shared zero-shot run: config snapshot, predictions, ROUGE/BLEU."""
+"""Shared experiment run: predictions, ROUGE/BLEU, artifacts."""
 
 from __future__ import annotations
 
@@ -17,12 +17,12 @@ logger = get_logger(__name__)
 
 
 @beartype
-def run_zero_shot(
+def predict_evaluate_save_artifacts(
     config: dict[str, Any],
     examples: list[QAExample],
     predict: Callable[[list[QAExample]], list[str]],
 ) -> Path:
-    """Run one zero-shot experiment and return the artifact directory."""
+    """Predict, score against references, and return the artifact directory."""
     experiment_name = str(config["experiment_name"])
     logger.info("starting experiment: %s (%d examples)", experiment_name, len(examples))
 

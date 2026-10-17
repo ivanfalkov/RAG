@@ -23,11 +23,11 @@ def _read_records(path: Path) -> list[dict[str, Any]]:
     with path.open(encoding="utf-8") as handle:
         payload: Any = json.load(handle)
     if not isinstance(payload, list):
-        raise ValueError(f"{path} must be a JSON list")
+        raise TypeError(f"{path} must be a JSON list")
     records: list[dict[str, Any]] = []
     for index, item in enumerate(payload):
         if not isinstance(item, dict):
-            raise ValueError(f"{path} item {index} must be an object")
+            raise TypeError(f"{path} item {index} must be an object")
         records.append(item)
     return records
 

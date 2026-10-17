@@ -31,31 +31,37 @@ LLM as judge — `openai/gpt-oss-120b` через Groq: strict JSON Schema и о
 
 vLLM вместо transformers — выше throughput за счёт PagedAttention и continuous batching. На Windows vLLM не используется: локальный инференс идёт из WSL.
 
+RAG — ванильная цепочка, не Deep Agent: индекс десяти статей в локальном Qdrant, `VectorStoreRetriever` с поиском по сходству (`top_k: 2`) и тот же `Qwen2.5-1.5B-Instruct` через vLLM. `RecursiveJsonSplitter` не используется: статья уже один короткий текст, резать JSON нечего. Эмбеддер `intfloat/multilingual-e5-small` на CPU, с префиксами `passage:` и `query:`.
+
 ### Автоматические метрики (50 вопросов)
 
-Прогоны ещё не запускались.
+Прогоны: zero-shot API `artifacts/zero_shot_api/20261016-140429`, zero-shot local `artifacts/zero_shot_local/20261016-135558`, RAG `artifacts/rag_local/20261017-134211`.
 
 | Модель | ROUGE-1 | ROUGE-2 | ROUGE-L | BLEU |
 |---|---|---|---|---|
-| zero-shot API (`qwen/qwen3.8-27b`) | — | — | — | — |
-| zero-shot local (`Qwen2.5-1.5B-Instruct`, vLLM) | — | — | — | — |
-| RAG (та же модель, что в выбранном zero-shot) | — | — | — | — |
+| zero-shot API (`qwen/qwen3.8-27b`) | 0.0000 | 0.0000 | 0.0000 | 0.0064 |
+| zero-shot local (`Qwen2.5-1.5B-Instruct`, vLLM) | 0.0000 | 0.0000 | 0.0000 | 0.0000 |
+| **RAG local (`Qwen2.5-1.5B-Instruct` + Qdrant)** | **0.7514** | **0.3422** | **0.7308** | **0.3206** |
 
-### LLM-as-judge (openai/gpt-oss-120b через Groq)
+### LLM-as-judge (50 вопросов, openai/gpt-oss-120b через Groq)
 
-Прогоны ещё не запускались.
+Шкала 1–5. Судья видит вопрос, эталон и ответ модели, статьи не видит. Все 50 примеров каждого прогона оценены, сбоев нет (`artifacts/judge_results.json`).
 
-| Модель | Faithfulness | Completeness | Conciseness |
+| Модель | Correctness | Completeness | Conciseness |
 |---|---|---|---|
-| zero-shot API | — | — | — |
-| zero-shot local | — | — | — |
-| RAG | — | — | — |
+| zero-shot API | 1.00 | 1.00 | 3.30 |
+| zero-shot local | 1.00 | 1.00 | 3.44 |
+| **RAG local** | **4.56** | **4.48** | **4.80** |
 
 ### Выводы
-Сравнивать zero-shot и RAG рано: метрик ещё нет. После прогонов сюда попадёт, какая модель выиграла по ROUGE/BLEU и по оценкам судьи, и совпали ли оба сигнала.
+- База закрытая. В промпте zero-shot прямо сказано отвечать «не знаю», если факта нет в вопросе. Обе модели так и сделали на 49 из 50 вопросов, поэтому ROUGE нулевой. Единственный ответ не «не знаю» — q28: и API, и локальная модель назвали HR, эталон — IT Ops. Это галлюцинация, не знание базы.
+- Conciseness у zero-shot около 3.3 — не качество ответа, а короткое «не знаю». Correctness 1.00 как раз фиксирует отказ.
+- RAG на той же локальной модели поднимает ROUGE-1 с 0 до 0.75 и correctness с 1.00 до 4.56. Оба сигнала совпадают: выигрыш даёт поиск, не размер модели. API-модель в 27B без контекста не лучше 1.5B.
+- Судья поставил RAG correctness ниже 5 на 7 вопросах. Три из них — чужая цифра из той же статьи: лимит по Европе подменён лимитом по России (q3, 9000 рублей вместо 160 евро), 6 пользователей — на 94 (q10), окно P3/P4 — на круглосуточную поддержку (q17). Статья в контексте есть, 1.5B выбирает соседний факт. q25 пересказывает цель сделки и теряет «45 дней». q8 называет 09:12 и пропускает дату. q15 теряет «до» у «8 часов». q24 — единственное «не знаю» у RAG: конверсия 31% в ответ не попала.
+- Более ранний RAG-прогон `20261017-132646` с формулировкой «кратко, одним предложением» дал ROUGE-1 0.7235 и BLEU 0.3305. Текущий промпт без слова «кратко» ближе к эталону по ROUGE.
 
-**Как ещё можно улучшить результаты**
-Поверх ванильного пайплайна: query rewriting, reranker, другой размер чанка и overlap, гибридный поиск. Сначала нужен рабочий индекс, ретривер и генератор на текущих 10 статьях.
+**Как ещё можно улучшить пайплайн**
+Ошибки сидят внутри статьи, а не между статьями: `top_k: 2` уже приносит нужный документ, модель путает соседние числа. Следующий шаг — резать статью на абзацы или предложения и ранжировать чанки, а не класть в промпт две политики целиком. Поверх этого — reranker и гибридный поиск (плотные векторы плюс ключевые слова вроде «Европа», «P3»). Query rewriting поможет вопросам с отсылкой «в документе», но не разведёт 9000 рублей и 160 евро внутри одного регламента. Для генерации имеет смысл просить дословно перенести число и единицу измерения из контекста: q8 и q15 ломаются на пропущенном уточнении, а не на ретривере.
 
 # 4. Инфраструктура и установка
 
@@ -104,9 +110,13 @@ Windows-окружение `.venv` для vLLM не используется. Л
 
 ```
 GROQ_API_KEY=gsk_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+LANGSMITH_TRACING=true
+LANGSMITH_API_KEY=lsv2_xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx
+LANGSMITH_PROJECT=rag
 ```
 
 - `GROQ_API_KEY` — ключ Groq для zero-shot по API и для LLM-as-judge (получить: https://console.groq.com → API Keys → Create API Key). Инструкция к заданию: https://lokismentor.yonote.ru/doc/zadacha-text-generation-GeqTbU4BTG
+- `LANGSMITH_TRACING`, `LANGSMITH_API_KEY`, `LANGSMITH_PROJECT` — трейс RAG: вопрос, найденные статьи, промпт и ответ (https://smith.langchain.com). Без ключа прогон не падает и трейсы не отправляет.
 
 ## 4.6. Загрузка данных
 
@@ -140,18 +150,19 @@ uv run python experiments/run_zero_shot_local.py
 
 ## 5.3. RAG
 
-Индекс статей, ретривер и генератор LangChain. Генератор — та же модель, что в одном из zero-shot прогонов:
+Ванильный RAG на локальной модели. Конфиг `configs/experiments/rag_local.yaml`. Скрипт заново собирает коллекцию `articles` в `data/qdrant` и отвечает на 50 вопросов. Генератор — тот же vLLM, что в п. 5.2. Движок V0 включается в коде, отдельно `VLLM_USE_V1=0` писать не нужно. Запускать из Ubuntu.
 
 ```bash
-uv run python experiments/run_rag.py
+uv run python experiments/run_rag_local.py
 ```
 
 ## 5.4. LLM-as-judge
 
-Оценка zero-shot и RAG через Groq:
+`openai/gpt-oss-120b` сравнивает ответ с вопросом и эталоном. Критерии в `configs/experiments/judge.yaml`: correctness, completeness, conciseness, шкала 1–5. Судья не видит статьи, только golden answer. В `prediction_files` указаны последние прогоны zero-shot (API и локальный) и RAG. Между запросами пауза 4 секунды, чтобы уложиться в 30 RPM. Дневной лимит останавливает прогон и сохраняет уже посчитанное.
 
 ```bash
 uv run python experiments/run_judge.py
+uv run python experiments/run_judge.py --limit 5
 ```
 
 ## 5.5. Артефакты
@@ -176,15 +187,21 @@ RAG/
 │   ├── general_config.yaml              # пути к данным и артефактам
 │   └── experiments/
 │       ├── zero_shot_local.yaml         # Qwen2.5-1.5B-Instruct
-│       └── zero_shot_api.yaml           # qwen/qwen3.8-27b
+│       ├── zero_shot_api.yaml           # qwen/qwen3.8-27b
+│       ├── rag_local.yaml               # Qdrant + та же локальная модель
+│       └── judge.yaml                   # gpt-oss-120b, пути к predictions
 ├── data/
-│   └── raw/                             # articles, questions, ground_truth
+│   ├── raw/                             # articles, questions, ground_truth
+│   └── qdrant/                          # локальный индекс, не коммитится
 ├── experiments/
 │   ├── run_zero_shot_local.py
-│   └── run_zero_shot_api.py
+│   ├── run_zero_shot_api.py
+│   ├── run_rag_local.py
+│   └── run_judge.py
 ├── src/
-│   ├── data/                            # загрузка пар вопрос-ответ
-│   ├── experiments/                     # общий прогон zero-shot
+│   ├── data/                            # статьи и пары вопрос-ответ
+│   ├── retrieval/                       # эмбеддер e5 и индекс Qdrant
+│   ├── experiments/                     # runner и RAG-цепочка
 │   ├── preprocessing/                   # сборка промпта
 │   ├── models/                          # vLLM и Groq генераторы
 │   ├── metrics/                         # compute_metrics, llm_judge

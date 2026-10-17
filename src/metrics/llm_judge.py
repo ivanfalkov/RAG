@@ -1,4 +1,4 @@
-"""LLM-as-judge evaluation via Groq."""
+"""LLM-as-judge evaluation of QA answers via Groq."""
 
 from __future__ import annotations
 
@@ -7,6 +7,7 @@ import os
 import time
 from typing import Any
 
+from beartype import beartype
 from openai import OpenAI
 
 from src.utils.logging_utils import get_logger
@@ -21,7 +22,7 @@ def _truncate(text: str, limit: int) -> str:
 
 
 class Judge:
-    def __init__(self, config: dict[str, Any]):
+    def __init__(self, config: dict[str, Any]) -> None:
         api_key = os.environ.get("GROQ_API_KEY")
         if not api_key:
             raise ValueError("GROQ_API_KEY not set in environment")
@@ -37,13 +38,14 @@ class Judge:
         self.sleep_between: float = cfg.get("sleep_between", 4.0)
         self.temperature: float = cfg.get("temperature", 0.0)
         self.max_tokens: int = cfg.get("max_tokens", 2048)
-        self.preview_chars: int = cfg.get("dialogue_preview_chars", 200)
+        self.reasoning_effort: str = cfg.get("reasoning_effort", "low")
+        self.preview_chars: int = cfg.get("question_preview_chars", 200)
         self.score_min: int = cfg.get("score_min", 1)
         self.score_max: int = cfg.get("score_max", 5)
         self.metrics: dict[str, str] = cfg["metrics"]
         self.metric_names: list[str] = list(self.metrics)
 
-    def _prompt(self, dialogue: str, summary: str) -> str:
+    def _prompt(self, question: str, reference: str, prediction: str) -> str:
         criteria = "\n".join(f"- {name}: {desc}" for name, desc in self.metrics.items())
         example = {
             name: f"<int {self.score_min}-{self.score_max}>"
@@ -51,12 +53,17 @@ class Judge:
         }
         example["reasoning"] = "<short explanation>"
         return (
-            "You are evaluating a dialogue summary.\n\n"
-            f"Given the dialogue and a candidate summary, rate the candidate on a scale of "
-            f"{self.score_min}-{self.score_max} for each criterion:\n\n"
+            "You are evaluating an answer to a question about a corporate knowledge base.\n"
+            "Score only against the question and the reference answer. "
+            "Do not use outside knowledge. "
+            "If the candidate says it does not know while the reference contains the answer, "
+            "correctness and completeness are 1.\n\n"
+            f"Rate the candidate on a scale of {self.score_min}-{self.score_max} "
+            "for each criterion:\n\n"
             f"{criteria}\n\n"
-            f"Dialogue:\n{dialogue}\n\n"
-            f"Candidate summary:\n{summary}\n\n"
+            f"Question:\n{question}\n\n"
+            f"Reference answer:\n{reference}\n\n"
+            f"Candidate answer:\n{prediction}\n\n"
             "IMPORTANT: Respond with ONLY a valid JSON object. Do NOT include any reasoning, "
             "explanations, or markdown formatting. Your entire response must be parseable as JSON.\n\n"
             f"{json.dumps(example)}"
@@ -85,10 +92,15 @@ class Judge:
         result["reasoning"] = "failed"
         return result
 
-    def _call_api(self, dialogue: str, summary: str) -> dict[str, Any]:
+    def _call_api(self, question: str, reference: str, prediction: str) -> dict[str, Any]:
         response = self.client.chat.completions.create(
             model=self.model,
-            messages=[{"role": "user", "content": self._prompt(dialogue, summary)}],
+            messages=[
+                {
+                    "role": "user",
+                    "content": self._prompt(question, reference, prediction),
+                }
+            ],
             temperature=self.temperature,
             max_tokens=self.max_tokens,
             response_format={
@@ -99,14 +111,16 @@ class Judge:
                     "schema": self._json_schema(),
                 },
             },
+            extra_body={"reasoning_effort": self.reasoning_effort},
         )
         content = response.choices[0].message.content
         return json.loads(content)
 
-    def score(self, dialogue: str, summary: str) -> dict[str, Any]:
+    @beartype
+    def score(self, question: str, reference: str, prediction: str) -> dict[str, Any]:
         for attempt in range(self.max_retries):
             try:
-                return self._call_api(dialogue, summary)
+                return self._call_api(question, reference, prediction)
             except Exception as e:
                 if is_daily_rate_limit(e):
                     raise DailyRateLimitExceeded(str(e)) from e
@@ -121,6 +135,7 @@ class Judge:
         return self._failed_result()
 
 
+@beartype
 def make_record(
     row: Any,
     model_name: str,
@@ -134,7 +149,7 @@ def make_record(
     record: dict[str, Any] = {
         "id": row_id,
         "model": model_name,
-        "dialogue": row["dialogue"],
+        "question": row["question"],
         "reference": row["reference"],
         "prediction": row["prediction"],
     }
@@ -144,6 +159,7 @@ def make_record(
     return record
 
 
+@beartype
 def log_record(
     record: dict[str, Any],
     index: int,
@@ -153,11 +169,11 @@ def log_record(
 ) -> None:
     scores = " ".join(f"{name}={record.get(name)}" for name in metric_names)
     logger.info(
-        "\n--- [%s] row %d/%d ---\nDIALOGUE:   %s\nREFERENCE:  %s\nPREDICTION: %s\nSCORES:     %s\nREASONING:  %s",
+        "\n--- [%s] row %d/%d ---\nQUESTION:   %s\nREFERENCE:  %s\nPREDICTION: %s\nSCORES:     %s\nREASONING:  %s",
         record["model"],
         index,
         total,
-        _truncate(str(record["dialogue"]), preview_chars),
+        _truncate(str(record["question"]), preview_chars),
         str(record["reference"]).strip(),
         str(record["prediction"]).strip(),
         scores,
@@ -165,6 +181,7 @@ def log_record(
     )
 
 
+@beartype
 def summarize(
     records: list[dict[str, Any]], metric_names: list[str]
 ) -> dict[str, float | int]:
