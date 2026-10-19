@@ -1,0 +1,25 @@
+experiment_name: rag_local
+
+model:
+  name: Qwen/Qwen2.5-1.5B-Instruct
+  gpu_memory_utilization: 0.8
+  max_model_len: 4096
+
+generation:
+  max_tokens: 128
+  temperature: 0.0
+
+retrieval:
+  embedding_model: intfloat/multilingual-e5-small
+  qdrant_path: data/qdrant
+  collection_name: articles
+  top_k: 2
+
+prompt: |
+  Ответь на вопрос одним предложением, используя только контекст.
+  Если в контексте нет ответа, напиши: не знаю.
+
+  Контекст:
+  {context}
+
+  Вопрос: {question}

@@ -1,0 +1,57 @@
+[project]
+name = "rag"
+version = "0.1.0"
+description = "Corporate knowledge-base RAG: zero-shot LLM vs LangChain retrieval"
+readme = "README.md"
+requires-python = ">=3.12,<3.13"
+
+dependencies = [
+    # --- core ---
+    "beartype>=0.20",
+    "python-dotenv>=1.0",
+    "pyyaml>=6.0",
+    "numpy>=1.26,<2.3",
+    "pandas>=2.2,<3",
+    "pyarrow<17",
+    # --- metrics ---
+    "evaluate>=0.4,<0.5",
+    "rouge-score>=0.1.2",
+    "sacrebleu>=2.4",
+    "datasets>=3.0,<4",
+    # --- notebooks ---
+    "ipykernel>=6.29",
+    "ipython>=8.20",
+    "matplotlib>=3.9",
+    # --- LLM stack (compatible with vllm 0.8.5) ---
+    "torch==2.6.0",
+    "transformers>=4.51.1,<4.52",
+    "tokenizers>=0.21,<0.22",
+    "vllm==0.8.5.post1",
+    "openai>=3.29.0",
+    # --- RAG ---
+    "langchain>=0.3,<1",
+    "langchain-community>=0.3,<1",
+    "langchain-huggingface>=0.1",
+    "ruff>=0.17.0",
+    "langchain-qdrant>=0.2.1",
+    "qdrant-client>=1.19.1",
+    "sentence-transformers>=5.7.0",
+]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src"]
+
+[tool.uv]
+index-strategy = "unsafe-best-match"
+
+[tool.uv.sources]
+torch = { index = "pytorch" }
+
+[[tool.uv.index]]
+name = "pytorch"
+url = "https://download.pytorch.org/whl/cu124"
+explicit = true

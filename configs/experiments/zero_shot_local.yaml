@@ -1,0 +1,16 @@
+experiment_name: zero_shot_local
+
+model:
+  name: Qwen/Qwen2.5-1.5B-Instruct
+  gpu_memory_utilization: 0.8
+  max_model_len: 2048
+
+generation:
+  max_tokens: 128
+  temperature: 0.0
+
+prompt: |
+  Ответь на вопрос одним предложением. Не объясняй ход рассуждения.
+  Если точного ответа нет, напиши: не знаю.
+
+  Вопрос: {question}

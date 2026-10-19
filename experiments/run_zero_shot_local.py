@@ -1,0 +1,43 @@
+"""Entry point: zero-shot Qwen2.5-1.5B-Instruct via vLLM."""
+
+from __future__ import annotations
+
+import argparse
+import logging
+from pathlib import Path
+
+from dotenv import load_dotenv
+
+from src.data.qa import load_qa_from_config
+from src.experiments.runner import predict_evaluate_save_artifacts
+from src.models.vllm_generator import VllmGenerator
+from src.utils.config import load_config
+from src.utils.logging_utils import setup_logging
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--config", type=Path, default=Path("configs/general_config.yaml"))
+    parser.add_argument(
+        "--experiment-config",
+        type=Path,
+        default=Path("configs/experiments/zero_shot_local.yaml"),
+    )
+    parser.add_argument("--verbose", action="store_true")
+    return parser.parse_args()
+
+
+def main() -> None:
+    load_dotenv()
+    args = parse_args()
+    setup_logging(level=logging.DEBUG if args.verbose else logging.INFO)
+
+    config = {**load_config(args.config), **load_config(args.experiment_config)}
+    examples = load_qa_from_config(config)
+    generator = VllmGenerator(config)
+    run_dir = predict_evaluate_save_artifacts(config, examples, generator.predict)
+    logging.getLogger(__name__).info("artifacts: %s", run_dir)
+
+
+if __name__ == "__main__":
+    main()
